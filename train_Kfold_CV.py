@@ -39,7 +39,7 @@ def main(config, fold_id):
     # build model architecture, initialize weights, then print to console
     model = config.init_obj('arch', module_arch)
     model.apply(weights_init_normal)
-    # logger.info(model)
+    logger.info(model)
 
     # get function handles of loss and metrics
     criterion = getattr(module_loss, config['loss'])

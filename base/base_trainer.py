@@ -67,7 +67,7 @@ class BaseTrainer:
 
         for epoch in range(self.epochs):
             # NOTE: result => 子类会通过metric_ftns确定要监视的指标
-            result, epoch_outs, epoch_trgs = self._train_epoch(epoch, self.epochs)
+            result, epoch_outs, epoch_trgs = self._train_epoch(epoch, self.epochs - 1)
 
             # save logged informations into log dict
             log = {'epoch': epoch}
@@ -222,16 +222,19 @@ class BaseTrainer:
         all_trgs = np.array(all_trgs).astype(int)
         all_outs = np.array(all_outs).astype(int)
 
-        r = classification_report(all_trgs, all_outs, digits=6, output_dict=True)
-        cm = confusion_matrix(all_trgs, all_outs)
+        names = ['W', "N1", "N2", "N3", "REM"]
+        r = classification_report(all_trgs, all_outs, target_names=names, digits=6, output_dict=True)
+        del(r['accuracy'])
         df = pd.DataFrame(r)
-        df["cohen"] = cohen_kappa_score(all_trgs, all_outs)
-        df["accuracy"] = accuracy_score(all_trgs, all_outs)
+        df.loc["accuracy"] = accuracy_score(all_trgs, all_outs)
+        df.loc["cohen"] = cohen_kappa_score(all_trgs, all_outs)
         df = df * 100
+        df.loc["support"] = df.loc["support"] / 100
         file_name = self.config["name"] + "_classification_report.xlsx"
         report_Save_path = os.path.join(save_dir, file_name)
         df.to_excel(report_Save_path)
 
+        cm = confusion_matrix(all_trgs, all_outs)
         cm_file_name = self.config["name"] + "_confusion_matrix.torch"
         cm_Save_path = os.path.join(save_dir, cm_file_name)
         torch.save(cm, cm_Save_path)
