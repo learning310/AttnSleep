@@ -2,6 +2,7 @@ import torch
 from abc import abstractmethod
 from numpy import inf
 import numpy as np
+import os
 
 class BaseTrainer:
     """
@@ -28,6 +29,7 @@ class BaseTrainer:
         self.fold_id = fold_id
 
         # configuration to monitor model performance and save best
+        # NOTE: 最优模型监视、最优标识、早停限制
         if self.monitor == 'off':
             self.mnt_mode = 'off'
             self.mnt_best = 0
@@ -38,15 +40,16 @@ class BaseTrainer:
             self.mnt_best = inf if self.mnt_mode == 'min' else -inf
             self.early_stop = cfg_trainer.get('early_stop', inf)
 
-        self.start_epoch = 1
-
         self.checkpoint_dir = config.save_dir
+
+        from torch.utils.tensorboard import SummaryWriter
+        self.writer = SummaryWriter(log_dir=os.path.join(config.save_dir, "curve") , comment='', filename_suffix='')
 
         if config.resume is not None:
             self._resume_checkpoint(config.resume)
 
     @abstractmethod
-    def _train_epoch(self, epoch, total_epochs):
+    def _train_epoch(self, epoch, total_epochs): # NOTE: 子类必须实现这个方法
         """
         Training logic for an epoch
 
@@ -62,7 +65,8 @@ class BaseTrainer:
         all_outs = []
         all_trgs = []
 
-        for epoch in range(self.start_epoch, self.epochs + 1):
+        for epoch in range(self.epochs):
+            # NOTE: result => 子类会通过metric_ftns确定要监视的指标
             result, epoch_outs, epoch_trgs = self._train_epoch(epoch, self.epochs)
 
             # save logged informations into log dict
@@ -70,12 +74,16 @@ class BaseTrainer:
             log.update(result)
             all_outs.extend(epoch_outs)
             all_trgs.extend(epoch_trgs)
-            # print logged informations to the screen
-            for key, value in log.items():
-                self.logger.info('    {:15s}: {}'.format(str(key), value))
+
+            # NOTE: 监视训练过程
+            self.logger.info(
+                'Epoch:{:0>2d} Train_Loss:{:.3f} Valid_Loss:{:.3f} Train_Acc:{:.3f} Valid_Acc:{:.3f}'.format(
+                    epoch, log['loss'], log['val_loss'], log['accuracy'], log['val_accuracy']))
+            
+            # NOTE: 记录图表
+            self.record_graph(log)
 
             # evaluate model performance according to configured metric, save best checkpoint as model_best
-            best = True
             if self.mnt_mode != 'off':
                 try:
                     # check whether model performance improved or not, according to specified metric(mnt_metric)
@@ -93,15 +101,17 @@ class BaseTrainer:
                     best = True
                 else:
                     not_improved_count += 1
+                    best = False
 
                 if not_improved_count > self.early_stop:
                     self.logger.info("Validation performance didn\'t improve for {} epochs. "
                                      "Training stops.".format(self.early_stop))
                     break
 
-            if epoch % self.save_period == 0:
-                self._save_checkpoint(epoch, save_best=best)
+            # if epoch % self.save_period == 0: # NOTE: 经过一定间隔的增长再保存，有着错过最优的可能，但减省IO时间
+            #     self._save_checkpoint(epoch, save_best=best)
 
+        # NOTE: 保存输出结果
         outs_name = "outs_" + str(self.fold_id)
         trgs_name = "trgs_" + str(self.fold_id)
         np.save(self.config._save_dir / outs_name, all_outs)
@@ -226,15 +236,9 @@ class BaseTrainer:
         cm_Save_path = os.path.join(save_dir, cm_file_name)
         torch.save(cm, cm_Save_path)
 
-
-        # Uncomment if you want to copy some of the important files into the experiement folder
-        # from shutil import copyfile
-        # copyfile("model/model.py", os.path.join(self.checkpoint_dir, "model.py"))
-        # copyfile("model/loss.py", os.path.join(self.checkpoint_dir, "loss.py"))
-        # copyfile("trainer/trainer.py", os.path.join(self.checkpoint_dir, "trainer.py"))
-        # copyfile("train_Kfold_CV.py", os.path.join(self.checkpoint_dir, "train_Kfold_CV.py"))
-        # copyfile("config.json",  os.path.join(self.checkpoint_dir, "config.json"))
-        # copyfile("data_loader/data_loaders.py",  os.path.join(self.checkpoint_dir, "data_loaders.py"))
+    def record_graph(self, log):
+        self.writer.add_scalars("Loss", {"Train": log['loss'], "Valid": log['val_loss']}, log['epoch'])
+        self.writer.add_scalars("Acc", {"Train": log['accuracy'], "Valid": log['val_accuracy']}, log['epoch'])
 
 
 

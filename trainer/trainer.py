@@ -1,8 +1,7 @@
-import numpy as np
 import torch
+import numpy as np
 from base import BaseTrainer
-from utils import inf_loop, MetricTracker
-import torch.nn as nn
+from utils import MetricTracker
 
 selected_d = {"outs": [], "trg": []}
 class Trainer(BaseTrainer):
@@ -14,12 +13,10 @@ class Trainer(BaseTrainer):
         super().__init__(model, criterion, metric_ftns, optimizer, config, fold_id)
         self.config = config
         self.data_loader = data_loader
-        self.len_epoch = len(self.data_loader)
 
         self.valid_data_loader = valid_data_loader
         self.do_validation = self.valid_data_loader is not None
         self.lr_scheduler = optimizer
-        self.log_step = int(data_loader.batch_size) * 1  # reduce this if you want more logs
 
         self.train_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns])
         self.valid_metrics = MetricTracker('loss', *[m.__name__ for m in self.metric_ftns])
@@ -41,39 +38,31 @@ class Trainer(BaseTrainer):
         overall_outs = []
         overall_trgs = []
         for batch_idx, (data, target) in enumerate(self.data_loader):
+            # 模型训练
             data, target = data.to(self.device), target.to(self.device)
-
             self.optimizer.zero_grad()
             output = self.model(data)
-
             loss = self.criterion(output, target, self.class_weights, self.device)
-
             loss.backward()
             self.optimizer.step()
 
+            # 更新指标
             self.train_metrics.update('loss', loss.item())
             for met in self.metric_ftns:
                 self.train_metrics.update(met.__name__, met(output, target))
 
-            if batch_idx % self.log_step == 0:
-                self.logger.debug('Train Epoch: {} {} Loss: {:.6f} '.format(
-                    epoch,
-                    self._progress(batch_idx),
-                    loss.item(),
-                ))
-
-            if batch_idx == self.len_epoch:
-                break
         log = self.train_metrics.result()
 
         if self.do_validation:
             val_log, outs, trgs = self._valid_epoch(epoch)
-            log.update(**{'val_' + k: v for k, v in val_log.items()})
-            if val_log["accuracy"] > self.selected:
+            log.update(**{'val_' + k: v for k, v in val_log.items()})  # NOTE: 在各个项目前加入 'val_' 前缀以作区分
+
+            if val_log["accuracy"] > self.selected: # 记录之前在所有迭代中模型在验证集上最优表现结果，并记录结果
                 self.selected = val_log["accuracy"]
                 selected_d["outs"] = outs
                 selected_d["trg"] = trgs
-            if epoch == total_epochs:
+
+            if epoch == total_epochs: # 迭代结束的时候返回记录的最好的结果
                 overall_outs.extend(selected_d["outs"])
                 overall_trgs.extend(selected_d["trg"])
 
@@ -109,16 +98,4 @@ class Trainer(BaseTrainer):
 
                 outs = np.append(outs, preds_.cpu().numpy())
                 trgs = np.append(trgs, target.data.cpu().numpy())
-
-
         return self.valid_metrics.result(), outs, trgs
-
-    def _progress(self, batch_idx):
-        base = '[{}/{} ({:.0f}%)]'
-        if hasattr(self.data_loader, 'n_samples'):
-            current = batch_idx * self.data_loader.batch_size
-            total = self.data_loader.n_samples
-        else:
-            current = batch_idx
-            total = self.len_epoch
-        return base.format(current, total, 100.0 * current / total)

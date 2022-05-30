@@ -39,7 +39,7 @@ def main(config, fold_id):
     # build model architecture, initialize weights, then print to console
     model = config.init_obj('arch', module_arch)
     model.apply(weights_init_normal)
-    logger.info(model)
+    # logger.info(model)
 
     # get function handles of loss and metrics
     criterion = getattr(module_loss, config['loss'])
@@ -65,29 +65,23 @@ def main(config, fold_id):
 
 
 if __name__ == '__main__':
-    args = argparse.ArgumentParser(description='PyTorch Template')
-    args.add_argument('-c', '--config', default="config.json", type=str,
+    parser = argparse.ArgumentParser(description='PyTorch Template')
+    parser.add_argument('-c', '--config', default="config.json", type=str,
                       help='config file path (default: None)')
-    args.add_argument('-r', '--resume', default=None, type=str,
+    parser.add_argument('-r', '--resume', type=str, default=None,
                       help='path to latest checkpoint (default: None)')
-    args.add_argument('-d', '--device', default="0", type=str,
+    parser.add_argument('-d', '--device', type=str, default="0",
                       help='indices of GPUs to enable (default: all)')
-    args.add_argument('-f', '--fold_id', type=str,
-                      help='fold_id')
-    args.add_argument('-da', '--np_data_dir', type=str,
+    parser.add_argument('-f', '--folds', type=int, default=20,
+                      help='folds')
+    parser.add_argument('-da', '--np_data_dir', type=str, default='./data/npz',
                       help='Directory containing numpy files')
 
-
     CustomArgs = collections.namedtuple('CustomArgs', 'flags type target')
-    options = []
-
-    args2 = args.parse_args()
-    fold_id = int(args2.fold_id)
-
-    config = ConfigParser.from_args(args, fold_id, options)
-    if "shhs" in args2.np_data_dir:
-        folds_data = load_folds_data_shhs(args2.np_data_dir, config["data_loader"]["args"]["num_folds"])
-    else:
-        folds_data = load_folds_data(args2.np_data_dir, config["data_loader"]["args"]["num_folds"])
-
-    main(config, fold_id)
+    args = parser.parse_args()
+    folds = int(args.folds)
+    for fold_id in range(0, folds):
+        options = []
+        config = ConfigParser.from_args(parser, fold_id, options)  # NOTE: 返回一个实例化的对象，并完成对logger的配置
+        folds_data = load_folds_data(args.np_data_dir, config["data_loader"]["args"]["num_folds"])
+        main(config, fold_id)

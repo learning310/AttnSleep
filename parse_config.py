@@ -29,18 +29,18 @@ class ConfigParser:
         if run_id is None:  # use timestamp as default run-id
             run_id = datetime.now().strftime('%d_%m_%Y_%H_%M_%S')
         if fold_id is not None:
-            fold_ = "_fold" + str(fold_id)
-            run_id += fold_
-        self._save_dir = save_dir / exper_name / run_id
+            fold_ = "fold" + str(fold_id) + '_'
+            run_id = fold_ + run_id
+        self._save_dir = save_dir / exper_name / run_id # NOTE: 运算符重载
         self._log_dir = save_dir / exper_name / run_id
 
         # make directory for saving checkpoints and log.
         exist_ok = run_id == ''
         self.save_dir.mkdir(parents=True, exist_ok=exist_ok)
-        #self.log_dir.mkdir(parents=True, exist_ok=exist_ok)
 
         # save updated config file to the checkpoint dir
         write_json(self.config, self.save_dir / 'config.json')
+        # NOTE: 因为可能有更新或修改，通过保存json文件来确定当前checkpoint所执行的参数情况
 
         # configure logging module
         setup_logging(self.log_dir)
@@ -78,7 +78,7 @@ class ConfigParser:
 
         # parse custom cli options into dictionary
         modification = {opt.target: getattr(args, _get_opt_name(opt.flags)) for opt in options}
-        return cls(config, fold_id, resume, modification)
+        return cls(config, fold_id, resume, modification) # NOTE: 实例化对象，进入init函数
 
     def init_obj(self, name, module, *args, **kwargs):
         """
